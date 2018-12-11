@@ -25,19 +25,17 @@ func main() {
 
 	s := bufio.NewScanner(f)
 	for s.Scan() {
-		var timestamp, action string
-
 		line := s.Text()
-		segments := strings.Split(line, " ")
 
-		timestamp = strings.Trim(segments[0]+" "+segments[1], "[]")
+		dateEnd := strings.Index(line, "]")
+		timestamp := line[1:dateEnd]
+		action := line[dateEnd+1:]
 
 		t, err := time.Parse("2006-01-02 15:04", timestamp)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		action = strings.Join(segments[2:], " ")
 		id, _ := strconv.Atoi(re.FindString(action))
 		closet.addEntry(entry{timestamp: t, action: action, id: id})
 	}
@@ -100,7 +98,7 @@ func (c *closet) processSleep() {
 		if guard != c.log[i].id && c.log[i].id != 0 {
 			guard = c.log[i].id
 		}
-		if c.log[i].action == "falls asleep" {
+		if strings.TrimSpace(c.log[i].action) == "falls asleep" {
 			mins := c.minutesAsleep(guard, c.log[i].timestamp, c.log[i+1].timestamp)
 			c.sleeper[guard] += mins
 			i++
