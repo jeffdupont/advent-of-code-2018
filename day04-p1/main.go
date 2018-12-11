@@ -21,7 +21,7 @@ func main() {
 
 	re := regexp.MustCompile("[0-9]+")
 
-	var closetLog []entry
+	closet := closet{}
 
 	s := bufio.NewScanner(f)
 	for s.Scan() {
@@ -39,36 +39,83 @@ func main() {
 
 		action = strings.Join(segments[2:], " ")
 		id, _ := strconv.Atoi(re.FindString(action))
-		closetLog = append(closetLog, entry{timestamp: t, action: action, id: id})
+		closet.addEntry(entry{timestamp: t, action: action, id: id})
 	}
 	if err := s.Err(); err != nil {
 		log.Fatal(err)
 	}
 
-	sort.Slice(closetLog, func(i, j int) bool {
-		return closetLog[i].timestamp.Before(closetLog[j].timestamp)
-	})
+	closet.sort()
+	closet.processSleep()
 
-	sleeper := map[int]int{}
+	fmt.Println(closet.okGo())
+}
+
+type closet struct {
+	log      []entry
+	sleeper  map[int]int
+	schedule map[int]map[int]int
+}
+
+func (c closet) okGo() int {
+	maxSleep := 0
 	guard := 0
-	for i := 0; i < len(closetLog); i++ {
-		if guard != closetLog[i].id && closetLog[i].id != 0 {
-			guard = closetLog[i].id
+	for g, sleep := range c.sleeper {
+		if sleep > maxSleep {
+			guard = g
+			maxSleep = sleep
 		}
-		fmt.Println(i, closetLog[i].timestamp.Format("2006-01-02 15:04"), closetLog[i].action)
-		if closetLog[i].action == "falls asleep" {
-			mins := minutesAsleep(closetLog[i].timestamp, closetLog[i+1].timestamp)
-			fmt.Println(guard, mins)
-			sleeper[guard] += mins
+	}
+	idealMin := 0
+	min := 0
+	for m, count := range c.schedule[guard] {
+		if count > idealMin {
+			min = m
+			idealMin = count
+		}
+	}
+	return guard * min
+}
+
+func (c *closet) processSleep() {
+	c.sleeper = map[int]int{}
+	guard := 0
+	for i := 0; i < len(c.log); i++ {
+		if guard != c.log[i].id && c.log[i].id != 0 {
+			guard = c.log[i].id
+		}
+		if c.log[i].action == "falls asleep" {
+			mins := c.minutesAsleep(guard, c.log[i].timestamp, c.log[i+1].timestamp)
+			c.sleeper[guard] += mins
 			i++
 		}
 	}
-
-	fmt.Println(sleeper)
 }
 
-func minutesAsleep(a, b time.Time) int {
-	return int(b.Sub(a).Minutes())
+func (c *closet) sort() {
+	sort.Slice(c.log, func(i, j int) bool {
+		return c.log[i].timestamp.Before(c.log[j].timestamp)
+	})
+}
+
+func (c *closet) addEntry(e entry) {
+	c.log = append(c.log, e)
+}
+
+func (c *closet) minutesAsleep(guard int, a, b time.Time) int {
+	count := 0
+	if c.schedule == nil {
+		c.schedule = make(map[int]map[int]int)
+	}
+	for a.Before(b) {
+		count++
+		if _, ok := c.schedule[guard]; !ok {
+			c.schedule[guard] = make(map[int]int)
+		}
+		c.schedule[guard][a.Minute()]++
+		a = a.Add(1 * time.Minute)
+	}
+	return count
 }
 
 type entry struct {
